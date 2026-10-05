@@ -390,7 +390,7 @@ function App() {
                 </p>
               </div>
 
-              <img className="corner-dog" src="/memes/собачка.jpg" alt="" />
+              <img className="corner-dog" src={`${import.meta.env.BASE_URL}memes/собачка.jpg`} alt="" />
             </div>
           </section>
         )}
@@ -426,7 +426,7 @@ function App() {
                     onClick={() =>
                       playMusic(
                         'shape',
-                        '/music/Sting_-_Shape_Of_My_Heart_47835291.mp3'
+                        `${import.meta.env.BASE_URL}music/Sting_-_Shape_Of_My_Heart_47835291.mp3`
                       )
                     }
                   >
@@ -493,7 +493,7 @@ function App() {
                     onClick={() =>
                       playMusic(
                         'eminem',
-                        '/music/Eminem_-_Mockingbird_47829435.mp3'
+                        `${import.meta.env.BASE_URL}music/Eminem_-_Mockingbird_47829435.mp3`
                       )
                     }
                   >
@@ -547,7 +547,7 @@ function App() {
                 <span>→</span>
               </button>
 
-              <img className="corner-hamster" src="/memes/хомяк.jpg" alt="" />
+              <img className="corner-hamster" src={`${import.meta.env.BASE_URL}memes/хомяк.jpg`} alt="" />
             </div>
 
             {popup && (
