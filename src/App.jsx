@@ -1,7 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './App.css';
+const BASE = import.meta.env.BASE_URL;
 
-const CONFETTI_COLORS = ['#1d1d1b', '#b5533c', '#d9a441', '#77766f', '#c9c8c0'];
+// мягкая «шампань-розовая» палитра — смотрится дорого на тёмном небе
+const FIREWORK_COLORS = [
+  '#ffe3b0',
+  '#ffb7a5',
+  '#ffd166',
+  '#f7a8c4',
+  '#b9dcff',
+  '#fff4de',
+  '#ffc98b',
+];
 
 const WISHES = [
   'Чтобы завел кота.',
@@ -47,42 +57,374 @@ const FORECAST = [
   { label: 'БЕНЗИН НА ЗАПРАВКАХ', value: 41 },
 ];
 
-function Confetti() {
-  const pieces = useMemo(
-    () =>
-      Array.from({ length: 60 }, (_, index) => ({
-        id: index,
-        left: Math.random() * 100,
-        delay: Math.random() * 3,
-        duration: 3.5 + Math.random() * 3,
-        width: 6 + Math.random() * 8,
-        height: 8 + Math.random() * 10,
-        round: Math.random() > 0.65,
-        color:
-          CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
-      })),
-    []
-  );
+/* САЛЮТЫ — неспешные, с мягким свечением и длинными следами */
 
-  return (
-    <div className="confetti" aria-hidden="true">
-      {pieces.map((piece) => (
-        <span
-          key={piece.id}
-          className="confetti-piece"
-          style={{
-            left: `${piece.left}%`,
-            width: piece.width,
-            height: piece.round ? piece.width : piece.height,
-            borderRadius: piece.round ? '50%' : 0,
-            background: piece.color,
-            animationDelay: `${piece.delay}s`,
-            animationDuration: `${piece.duration}s`,
-          }}
-        />
-      ))}
-    </div>
-  );
+function Fireworks() {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return undefined;
+    }
+
+    const ctx = canvas.getContext('2d');
+
+    let width = 0;
+    let height = 0;
+    let scale = 1;
+    let nextLaunch = 0;
+    let nextBarrage = 0;
+    let animationId = 0;
+
+    const rockets = [];
+    const sparks = [];
+    const flashes = [];
+
+    const pick = () =>
+      FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+
+      width = rect.width;
+      height = rect.height;
+
+      // на телефоне салют меньше, на большом экране крупнее
+      scale = Math.min(Math.max(Math.min(width, height) / 520, 0.6), 1.25);
+
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    };
+
+    const add = (x, y, vx, vy, color, options = {}) => {
+      sparks.push({
+        x,
+        y,
+        px: x,
+        py: y,
+        vx,
+        vy,
+        color,
+        life: 1,
+        decay: options.decay ?? 0.012,
+        size: options.size ?? 1.6,
+        gravity: options.gravity ?? 0.03,
+        friction: options.friction ?? 0.965,
+        twinkle: options.twinkle ?? false,
+        glitter: options.glitter ?? false,
+        glow: options.glow ?? true,
+      });
+    };
+
+    // «Пион» — мягкий шар, чуть двухцветный
+    const burstPeony = (x, y) => {
+      const main = pick();
+      const accent = pick();
+      const count = 90;
+
+      for (let index = 0; index < count; index += 1) {
+        const angle =
+          (Math.PI * 2 * index) / count + (Math.random() - 0.5) * 0.12;
+        const speed = (4.4 + Math.random() * 2.6) * scale;
+
+        add(
+          x,
+          y,
+          Math.cos(angle) * speed,
+          Math.sin(angle) * speed,
+          index % 5 === 0 ? accent : main,
+          {
+            decay: 0.011 + Math.random() * 0.006,
+            size: 1.5,
+            twinkle: Math.random() > 0.6,
+          }
+        );
+      }
+    };
+
+    // «Хризантема» — тонкие длинные лучи
+    const burstChrysanthemum = (x, y) => {
+      const main = pick();
+      const count = 64;
+
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count;
+        const speed = (5.6 + Math.random() * 1.4) * scale;
+
+        add(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, main, {
+          decay: 0.008,
+          size: 1.6,
+          friction: 0.972,
+          gravity: 0.034,
+        });
+      }
+    };
+
+    // «Ива» — золотой дождь, красиво стекает вниз
+    const burstWillow = (x, y) => {
+      const count = 70;
+
+      for (let index = 0; index < count; index += 1) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = (2.5 + Math.random() * 3.5) * scale;
+
+        add(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, '#ffcf8a', {
+          decay: 0.0065,
+          size: 1.4,
+          friction: 0.976,
+          gravity: 0.045,
+          glitter: true,
+        });
+      }
+    };
+
+    // «Кольцо» — двойное, нежное
+    const burstRing = (x, y) => {
+      const outer = pick();
+      const inner = pick();
+      const count = 56;
+
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count;
+        const speed = 5.2 * scale;
+
+        add(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, outer, {
+          decay: 0.012,
+          size: 1.7,
+          friction: 0.968,
+          gravity: 0.02,
+        });
+
+        if (index % 2 === 0) {
+          add(
+            x,
+            y,
+            Math.cos(angle) * speed * 0.52,
+            Math.sin(angle) * speed * 0.52,
+            inner,
+            { decay: 0.014, size: 1.4, friction: 0.968, gravity: 0.02 }
+          );
+        }
+      }
+    };
+
+    const explode = (x, y) => {
+      const types = [
+        burstPeony,
+        burstPeony,
+        burstChrysanthemum,
+        burstWillow,
+        burstRing,
+      ];
+
+      types[Math.floor(Math.random() * types.length)](x, y);
+
+      flashes.push({ x, y, color: pick(), life: 1 });
+
+      // жемчужные искорки в центре
+      for (let index = 0; index < 8; index += 1) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 1.1;
+
+        add(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, '#fff4de', {
+          decay: 0.04,
+          size: 2,
+          gravity: 0,
+        });
+      }
+    };
+
+    const launch = (wait = 0) => {
+      const x = width * (0.14 + Math.random() * 0.72);
+
+      rockets.push({
+        x,
+        y: height + 10,
+        px: x,
+        py: height + 10,
+        targetY: height * (0.14 + Math.random() * 0.3),
+        speed: (7.5 + Math.random() * 2) * Math.max(scale, 0.8),
+        drift: (Math.random() - 0.5) * 0.5,
+        wait,
+      });
+    };
+
+    const tick = (time) => {
+      // плавное затухание создаёт длинные мягкие следы
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.13)';
+      ctx.fillRect(0, 0, width, height);
+
+      // свечение складывается — как настоящий огонь
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+
+      if (time >= nextLaunch) {
+        launch();
+        nextLaunch = time + 800 + Math.random() * 900;
+      }
+
+      if (time >= nextBarrage) {
+        if (nextBarrage !== 0) {
+          launch(0);
+          launch(16);
+          launch(32);
+        }
+
+        nextBarrage = time + 10000 + Math.random() * 3000;
+      }
+
+      // вспышки света
+      for (let index = flashes.length - 1; index >= 0; index -= 1) {
+        const flash = flashes[index];
+
+        flash.life -= 0.05;
+
+        if (flash.life <= 0) {
+          flashes.splice(index, 1);
+          continue;
+        }
+
+        const radius = 110 * scale * (1.15 - flash.life * 0.4);
+        const gradient = ctx.createRadialGradient(
+          flash.x,
+          flash.y,
+          0,
+          flash.x,
+          flash.y,
+          radius
+        );
+
+        gradient.addColorStop(0, flash.color);
+        gradient.addColorStop(1, `${flash.color}00`);
+
+        ctx.globalAlpha = flash.life * 0.32;
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(flash.x, flash.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // ракеты
+      for (let index = rockets.length - 1; index >= 0; index -= 1) {
+        const rocket = rockets[index];
+
+        if (rocket.wait > 0) {
+          rocket.wait -= 1;
+          continue;
+        }
+
+        rocket.px = rocket.x;
+        rocket.py = rocket.y;
+
+        rocket.y -= rocket.speed;
+        rocket.x += rocket.drift;
+        rocket.speed = Math.max(rocket.speed * 0.99, 2.4);
+
+        ctx.globalAlpha = 0.9;
+        ctx.strokeStyle = '#fff4de';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(rocket.px, rocket.py);
+        ctx.lineTo(rocket.x, rocket.y);
+        ctx.stroke();
+
+        // тонкий золотой след
+        add(
+          rocket.x,
+          rocket.y + 4,
+          (Math.random() - 0.5) * 0.3,
+          0.4 + Math.random() * 0.3,
+          '#ffcf8a',
+          { decay: 0.07, size: 1, gravity: 0, friction: 1, glow: false }
+        );
+
+        if (rocket.y <= rocket.targetY) {
+          explode(rocket.x, rocket.y);
+          rockets.splice(index, 1);
+        }
+      }
+
+      // искры
+      for (let index = sparks.length - 1; index >= 0; index -= 1) {
+        const spark = sparks[index];
+
+        spark.px = spark.x;
+        spark.py = spark.y;
+
+        spark.vx *= spark.friction;
+        spark.vy *= spark.friction;
+        spark.vy += spark.gravity;
+
+        spark.x += spark.vx;
+        spark.y += spark.vy;
+
+        spark.life -= spark.decay;
+
+        if (spark.life <= 0) {
+          sparks.splice(index, 1);
+          continue;
+        }
+
+        let alpha = spark.life;
+
+        if (spark.twinkle && Math.random() > 0.75) {
+          alpha *= 0.35;
+        }
+
+        if (spark.glitter && spark.life < 0.4 && Math.random() > 0.5) {
+          alpha *= 0.2;
+        }
+
+        // тонкий яркий штрих-след
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = spark.color;
+        ctx.lineWidth = Math.max(spark.size * (0.5 + spark.life * 0.5), 0.6);
+        ctx.beginPath();
+        ctx.moveTo(spark.px, spark.py);
+        ctx.lineTo(spark.x, spark.y);
+        ctx.stroke();
+
+        // мягкое свечение вокруг головки
+        if (spark.glow && sparks.length < 1400) {
+          ctx.globalAlpha = alpha * 0.22;
+          ctx.fillStyle = spark.color;
+          ctx.beginPath();
+          ctx.arc(spark.x, spark.y, spark.size * 2.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+
+      animationId = requestAnimationFrame(tick);
+    };
+
+    resize();
+
+    window.addEventListener('resize', resize);
+
+    // стартовый залп
+    launch(0);
+    launch(16);
+    launch(32);
+
+    animationId = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(animationId);
+      window.removeEventListener('resize', resize);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="fireworks" aria-hidden="true" />;
 }
 
 function Equalizer({ on }) {
@@ -109,7 +451,7 @@ function App() {
   const audioRef = useRef(null);
   const touchStart = useRef(null);
 
-  const totalPages = 11;
+  const totalPages = 14;
   const lastPage = totalPages - 1;
 
   const candles = Array.from({ length: 25 }, (_, index) => index + 1);
@@ -219,7 +561,9 @@ function App() {
   };
 
   const handleTouchStart = (event) => {
-    touchStart.current = event.touches[0].clientX;
+    const touch = event.touches[0];
+
+    touchStart.current = { x: touch.clientX, y: touch.clientY };
   };
 
   const handleTouchEnd = (event) => {
@@ -227,11 +571,18 @@ function App() {
       return;
     }
 
-    const touchEnd = event.changedTouches[0].clientX;
-    const difference = touchStart.current - touchEnd;
+    const touch = event.changedTouches[0];
 
-    if (Math.abs(difference) > 60 && !candlePause) {
-      if (difference > 0) {
+    const differenceX = touchStart.current.x - touch.clientX;
+    const differenceY = touchStart.current.y - touch.clientY;
+
+    // листаем только явным горизонтальным свайпом, чтобы не мешать прокрутке
+    if (
+      Math.abs(differenceX) > 60 &&
+      Math.abs(differenceX) > Math.abs(differenceY) * 1.5 &&
+      !candlePause
+    ) {
+      if (differenceX > 0) {
         if (page !== 0) {
           nextPage();
         }
@@ -247,7 +598,7 @@ function App() {
 
   return (
     <div
-      className="site"
+      className={page === lastPage ? 'site night' : 'site'}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -282,9 +633,9 @@ function App() {
               </h1>
 
               <p className="intro-text">
-                Здесь их действительно 25.
+                Здесь их действительно 25...
                 <br />
-                Не забудь загадать желание — оно потом пригодится.
+                Не забудь загадать желание)
               </p>
 
               <div className="candle-count">
@@ -323,7 +674,7 @@ function App() {
 
             {candlePause && (
               <div className="candle-pause">
-                <Confetti />
+                <Fireworks />
 
                 <div className="pause-box">
                   <p className="section-number">ENOUGH</p>
@@ -333,7 +684,7 @@ function App() {
                   <p>
                     Пять свечей — вполне достаточно.
                     <br />
-                    Остальные двадцать можешь представить.
+                    Остальные двадцать можешь представить так уж и быть.
                   </p>
 
                   <button
@@ -368,29 +719,25 @@ function App() {
 
               <div className="birthday-copy">
                 <p>
-                  <span className="big-age">25</span> — это тяжело.
+                  <span className="big-age">25</span> — это, конечно, тяжело.
                 </p>
 
                 <p>
-                  Пхх.
                   <br />
-                  Но не унывай.
-                  <br />
-                  Ладно, шучу.
+                  Ладно, шучу ,30 пострашнее будет.
                 </p>
 
                 <p>
-                  Поздравляю тебя с днём рождения. Желаю всего прекрасного,
+                  Решила поздравить тебя таким необычным способом .Желаю всего прекрасного,
                   хорошего и легендарного.
                 </p>
 
                 <p className="quote">
-                  Дальше будет несколько страниц. Каждая — с отдельным
-                  пожеланием. Не пролистывай, я старалась.
+                  А дальше — еще несколько пожеланий. Не пролистывай, я старалась.
                 </p>
               </div>
 
-              <img className="corner-dog" src={`${import.meta.env.BASE_URL}memes/собачка.jpg`} alt="" />
+              <img className="corner-dog" src={`${BASE}memes/собачка.jpg`} alt="" />
             </div>
           </section>
         )}
@@ -411,9 +758,8 @@ function App() {
                   <span className="track-number">01</span>
 
                   <div>
-                    <strong>SHAPE OF MY HEART</strong>
+                    <strong>Нажми ,клянусь это не Три дня дождя. </strong>
 
-                    <small>STING</small>
                   </div>
                 </div>
 
@@ -424,10 +770,7 @@ function App() {
                     type="button"
                     className="play-button"
                     onClick={() =>
-                      playMusic(
-                        'shape',
-                        `${import.meta.env.BASE_URL}music/Sting_-_Shape_Of_My_Heart_47835291.mp3`
-                      )
+                      playMusic('shape', `${BASE}music/Sting_-_Shape_Of_My_Heart_47835291.mp3`)
                     }
                   >
                     {playing === 'shape' ? 'PAUSE' : 'PLAY'}
@@ -441,17 +784,16 @@ function App() {
 
               <div className="long-text">
                 <p>
-                  Эта песня мне очень нравится, поэтому она здесь не просто так.
+                  Эта песня мне очень нравится, поэтому она здесь.
                 </p>
 
                 <p>
-                  Пусть в твоей жизни будет больше таких моментов, которые
-                  хочется не пролистать, а оставить себе.
+                  Пусть в жизни будет больше красивых моментов, хороших новостей
+                  и спокойных вечеров.
                 </p>
 
                 <p>
-                  Красивых дней, хороших новостей, спокойных вечеров и людей,
-                  рядом с которыми действительно хорошо.
+                  Уловил настроение? Именно таких уютных вечеров я тебе и желаю.
                 </p>
               </div>
             </div>
@@ -470,7 +812,7 @@ function App() {
               <p className="wish-description">
                 Хорошего, как этот день.
                 <br />
-                Или как песни Эминема.
+                Или как песни этого исполнителя.
               </p>
 
               <div className="music-card">
@@ -478,9 +820,8 @@ function App() {
                   <span className="track-number">02</span>
 
                   <div>
-                    <strong>MOCKINGBIRD</strong>
+                    <strong>О я знаю это песня тебе нравится</strong>
 
-                    <small>EMINEM</small>
                   </div>
                 </div>
 
@@ -491,10 +832,7 @@ function App() {
                     type="button"
                     className="play-button"
                     onClick={() =>
-                      playMusic(
-                        'eminem',
-                        `${import.meta.env.BASE_URL}music/Eminem_-_Mockingbird_47829435.mp3`
-                      )
+                      playMusic('eminem', `${BASE}music/Eminem_-_Mockingbird_47829435.mp3`)
                     }
                   >
                     {playing === 'eminem' ? 'PAUSE' : 'PLAY'}
@@ -508,16 +846,20 @@ function App() {
 
               <div className="long-text">
                 <p>
-                  Хорошего настолько, чтобы утром хотелось вставать не потому,
-                  что надо, а потому что интересно, что будет дальше.
+                  Хорошего настолько, чтобы утром хотелось вставать
+                  и смотреть, что приготовил новый день.
                 </p>
 
                 <p>
-                  Чтобы планы получались, случайности оказывались приятными, а
-                  обычные дни иногда внезапно становились лучшими.
+                  Как это прозвучало банально.Да это я тебе сеанс психолого устраиваю.
+                  Надеюсь поможет.
                 </p>
-
-                <p>И чтобы музыка всегда находила нужное настроение.</p>
+                <p>
+                  Шучу, а может и нет .
+                </p>
+                <p>
+                  
+                </p>
               </div>
             </div>
           </section>
@@ -535,7 +877,7 @@ function App() {
               <p className="legendary-text">Легендарного, как эта открытка.</p>
 
               <p className="legendary-copy">
-                Вот спорим, никто из девушек тебе такого не делал.
+                Вот спорим, никто тебе такого не делал.
               </p>
 
               <button
@@ -547,7 +889,7 @@ function App() {
                 <span>→</span>
               </button>
 
-              <img className="corner-hamster" src={`${import.meta.env.BASE_URL}memes/хомяк.jpg`} alt="" />
+              <img className="corner-hamster" src={`${BASE}memes/хомяк.jpg`} alt="" />
             </div>
 
             {popup && (
@@ -569,7 +911,7 @@ function App() {
                   <h2>
                     Вот спорим,
                     <br />
-                    никто из девушек
+                    никто 
                     <br />
                     тебе такого
                     <br />
@@ -579,7 +921,7 @@ function App() {
                   <p className="popup-text">
                     А ты ещё проверяешь...
                     <br />
-                    Не понял что только я могла догодаться отправить тебе ссылку,как одно предложнние
+                    Не понял, что только я могла догадаться отправить тебе ссылку, как одно предложение
                     и уместить туда целую открытку .
                   </p>
 
@@ -607,9 +949,9 @@ function App() {
               <h2 className="mood-title">
                 И ещё я хочу
                 <br />
-                пожелать тебе 
+                пожелать тебе :
                  <br />
-                 (давай ты сможешь перевести)
+                 
               </h2>
 
               <div className="mood-list">
@@ -636,7 +978,7 @@ function App() {
 
               <div className="long-text mood-text">
                 <p>
-                  Чтобы рядом были друзья, с которыми можно смеяться над полной
+                  Чтобы рядом были друзья (много друзей не 1 и не 2 а много), с которыми можно смеяться над полной
                   ерундой, а можно поговорить о действительно важных вещах.
                 </p>
 
@@ -651,12 +993,107 @@ function App() {
           </section>
         )}
 
-        {/* 07 — ДОСТИЖЕНИЯ */}
+        {/* 07 — ЗА ЧТО ТЕБЯ ЦЕНЮ */}
 
         {page === 6 && (
           <section className="page">
+            <div className="page-content mood-page">
+              <p className="section-number">07 / ABOUT YOU</p>
+
+              <h2 className="mood-title">
+                За что тебя
+                <br />
+                <em>ценю.</em>
+              </h2>
+
+              <div className="long-text mood-text">
+                <p>За то, что с тобой можно смеяться над полной ерундой.</p>
+                <p>За то, что у тебя есть своё мнение и свой характер.</p>
+                <p>За твою музыку, твои странные шутки и за то, что с тобой никогда не бывает скучно.</p>
+                <p>В общем, оставайся собой. Остальное как-нибудь разберём.</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* 08 — ТРИ ДНЯ ДОЖДЯ */}
+
+        {page === 7 && (
+          <section className="page">
+            <div className="page-content wish-page">
+              <p className="section-number">08 / ONE MORE SONG</p>
+
+              <h1>
+                И ещё одну
+                <br />
+                <em>песню.</em>
+              </h1>
+
+              <p className="wish-description">Ну а как без неё.</p>
+
+              <div className="music-card">
+                <div className="music-info">
+                  <span className="track-number">03</span>
+                  <div>
+                    <strong>Три дня дождя</strong>
+                    <small>Просто потому что надо.</small>
+                  </div>
+                </div>
+
+                <div className="music-right">
+                  <Equalizer on={playing === 'rain'} />
+                  <button
+                    type="button"
+                    className="play-button"
+                    onClick={() => playMusic('rain', `${BASE}music/3dnya_dozhdya.mp3`)}
+                  >
+                    {playing === 'rain' ? 'PAUSE' : 'PLAY'}
+                  </button>
+                </div>
+              </div>
+
+              {musicError && (
+                <p className="music-error">Не удалось загрузить песню.</p>
+              )}
+
+              <div className="long-text">
+                <p>Здесь даже объяснять ничего не буду.</p>
+                <p>Просто хорошая песня для хорошего дня.</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* 09 — НА 25+ */}
+
+        {page === 8 && (
+          <section className="page">
+            <div className="page-content legendary-page">
+              <p className="section-number">09 / 25+</p>
+
+              <h1 className="huge-title">НА 25+</h1>
+
+              <p className="legendary-text">
+                Пусть следующий год будет лучше предыдущего.
+              </p>
+
+              <div className="long-text">
+                <p>Новых мест. Новых впечатлений. Нормальных людей рядом.</p>
+                <p>Денег — достаточно. Здоровья — с запасом. И чтобы планы не оставались только планами.</p>
+                <p>А всё остальное приложится.</p>
+              </div>
+
+              <img className="corner-hamster" src={`${BASE}memes/хомяк.jpg`} alt="" />
+            </div>
+          </section>
+        )}
+
+        {/* 10 — ДОСТИЖЕНИЯ */}
+
+        {page === 9 && (
+          <section className="page">
             <div className="page-content ach-page">
-              <p className="section-number">07 / ACHIEVEMENTS</p>
+              <p className="section-number">10 / ACHIEVEMENTS</p>
 
               <h2 className="ach-title">
                 Достижения,
@@ -682,12 +1119,12 @@ function App() {
           </section>
         )}
 
-        {/* 08 — ПРОГНОЗ */}
+        {/* 11 — ПРОГНОЗ */}
 
-        {page === 7 && (
+        {page === 10 && (
           <section className="page">
             <div className="page-content forecast-page">
-              <p className="section-number">08 / FORECAST</p>
+              <p className="section-number">11 / FORECAST</p>
 
               <h2 className="ach-title">
                 Прогноз на
@@ -724,12 +1161,12 @@ function App() {
           </section>
         )}
 
-        {/* 09 — ГЕНЕРАТОР ЖЕЛАНИЙ */}
+        {/* 12 — ГЕНЕРАТОР ЖЕЛАНИЙ */}
 
-        {page === 8 && (
+        {page === 11 && (
           <section className="page">
             <div className="page-content gen-page">
-              <p className="section-number">09 / MAKE A WISH</p>
+              <p className="section-number">12 / MAKE A WISH</p>
 
               <h1>
                 Загадай <em>желание</em>
@@ -740,7 +1177,7 @@ function App() {
 
                 {wishIndex === null ? (
                   <p className="gen-wish placeholder">
-                    Нажми на кнопку, и я выдам тебе пожелание.
+                    Нажми на кнопку, и я выдам тебе пожелание. 
                   </p>
                 ) : (
                   <p className="gen-wish" key={wishCount}>
@@ -767,12 +1204,12 @@ function App() {
           </section>
         )}
 
-        {/* 10 — БЕЗ ДЕПРЕССИЙ */}
+        {/* 13 — БЕЗ ДЕПРЕССИЙ */}
 
-        {page === 9 && (
+        {page === 12 && (
           <section className="page">
             <div className="page-content depression-page">
-              <p className="section-number">10 / IMPORTANT</p>
+              <p className="section-number">13 / IMPORTANT</p>
 
               <h1>
                 Ну и давай
@@ -808,14 +1245,14 @@ function App() {
           </section>
         )}
 
-        {/* 11 — ФИНАЛ */}
+        {/* 14 — ФИНАЛ */}
 
-        {page === 10 && (
+        {page === 13 && (
           <section className="page">
-            <Confetti />
+            <Fireworks />
 
             <div className="page-content final-page">
-              <p className="section-number">11 / END</p>
+              <p className="section-number">14 / END</p>
 
               <h1>
                 Надеюсь,
